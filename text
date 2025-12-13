@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>極簡記事本</title>
+    <!-- Tailwind CSS (透過 CDN 載入) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 設定 Tailwind 的深色模式與自定義顏色 -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#64748b',
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+        }
+        /* 自定義捲軸樣式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        /* 隱藏 contenteditable 的外框 */
+        [contenteditable]:focus {
+            outline: none;
+        }
+        
+        /* 簡單的 Toast 通知 */
+        #toast {
+            visibility: hidden;
+            min-width: 250px; 
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px; 
+            padding: 16px;
+            position: fixed;
+            z-index: 50;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s, bottom 0.3s;
+        }
+        #toast.show {
+            visibility: visible;
+            opacity: 1;
+            bottom: 50px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-300 h-screen overflow-hidden flex flex-col">
+
+    <!-- 頂部導航列 -->
+    <header class="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 sm:px-6 shadow-sm z-10 shrink-0">
+        <div class="flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            <h1 class="text-xl font-bold tracking-wide hidden sm:block">極簡記事本</h1>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-4">
+            <!-- 搜尋框 -->
+            <div class="relative hidden sm:block">
+                <input type="text" id="searchInput" placeholder="搜尋筆記..." class="w-48 lg:w-64 bg-gray-100 dark:bg-gray-700 border-none rounded-full py-1.5 px-4 text-sm focus:ring-2 focus:ring-primary outline-none transition-all">
+            </div>
+
+            <!-- 主題切換按鈕 -->
+            <button id="themeToggle" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="切換深色模式">
+                <!-- 太陽圖示 -->
+                <svg id="sunIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+                <!-- 月亮圖示 -->
+                <svg id="moonIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- 主要內容區塊 -->
+    <div class="flex flex-1 overflow-hidden relative">
+        
+        <!-- 側邊欄 (筆記列表) -->
+        <aside id="sidebar" class="w-full sm:w-72 md:w-80 bg-gray-50 dark:bg-gray-800/50 border-r border-gray-200 dark:border-gray-700 flex flex-col absolute sm:relative z-20 h-full transition-transform duration-300 transform sm:translate-x-0 -translate-x-full">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <span class="text-sm font-medium text-gray-500 dark:text-gray-400">我的筆記</span>
+                <button onclick="createNewNote()" class="flex items-center gap-1 bg-primary hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm transition-colors shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    新增
+                </button>
+            </div>
+            
+            <!-- 手機版搜尋框 (僅在手機顯示) -->
+            <div class="p-2 sm:hidden border-b border-gray-200 dark:border-gray-700">
+                <input type="text" id="mobileSearchInput" placeholder="搜尋..." class="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-1.5 px-3 text-sm">
+            </div>
+
+            <!-- 筆記列表容器 -->
+            <div id="notesList" class="flex-1 overflow-y-auto p-2 space-y-1">
+                <!-- 筆記項目會由 JS 動態生成 -->
+            </div>
+            
+            <!-- 手機版關閉側邊欄按鈕 -->
+            <button id="closeSidebarBtn" class="sm:hidden absolute bottom-4 right-4 bg-gray-800 text-white p-3 rounded-full shadow-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </aside>
+
+        <!-- 編輯區 -->
+        <main class="flex-1 flex flex-col bg-white dark:bg-gray-900 w-full relative">
+            
+            <!-- 手機版：開啟選單按鈕 -->
+            <button id="openSidebarBtn" class="sm:hidden absolute top-4 left-4 z-10 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            </button>
+
+            <!-- 編輯器工具列 -->
+            <div class="h-14 border-b border-gray-100 dark:border-gray-800 flex items-center justify-end px-4 gap-2">
+                <span id="saveStatus" class="text-xs text-gray-400 mr-2">已儲存</span>
+                
+                <button onclick="downloadCurrentNote()" class="flex items-center gap-2 text-gray-500 hover:text-primary dark:text-gray-400 dark:hover:text-white px-3 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="下載檔案 (可改副檔名)">
+                    <span class="text-sm font-medium hidden sm:inline">下載</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                </button>
+                
+                <div class="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-2"></div>
+
+                <button onclick="deleteCurrentNote()" class="text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400 p-2 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition" title="刪除筆記">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- 標題輸入 -->
+            <div class="px-4 sm:px-8 pt-6 pb-2">
+                <input type="text" id="noteTitle" placeholder="無標題筆記" class="w-full text-3xl font-bold bg-transparent border-none outline-none placeholder-gray-300 dark:placeholder-gray-600 text-gray-800 dark:text-gray-100">
+            </div>
+
+            <!-- 內容輸入區 -->
+            <div class="flex-1 px-4 sm:px-8 pb-8 overflow-y-auto">
+                <textarea id="noteBody" placeholder="開始輸入內容..." class="w-full h-full resize-none bg-transparent border-none outline-none text-lg leading-relaxed text-gray-600 dark:text-gray-300 placeholder-gray-300 dark:placeholder-gray-600 font-normal"></textarea>
+            </div>
+
+            <!-- 空狀態 (當沒有筆記時顯示) -->
+            <div id="emptyState" class="hidden absolute inset-0 bg-white dark:bg-gray-900 flex flex-col items-center justify-center text-gray-400 z-10">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                <p class="text-lg font-medium">選擇一則筆記或建立新筆記</p>
+                <button onclick="createNewNote()" class="mt-4 px-6 py-2 bg-primary text-white rounded-full hover:bg-blue-600 transition shadow-md">
+                    建立新筆記
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- 新增：自定義 Modal 視窗 (取代系統 confirm/prompt) -->
+    
+    <!-- 刪除確認 Modal -->
+    <div id="deleteModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/50 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-11/12 max-w-sm transform transition-all scale-100">
+            <div class="text-center">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
+                    <svg class="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">刪除筆記？</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">確定要刪除這則筆記嗎？此動作無法復原。</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="closeModal('deleteModal')" class="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors">取消</button>
+                <button onclick="confirmDeleteNote()" class="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium shadow-md transition-colors">刪除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 下載 Modal -->
+    <div id="downloadModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/50 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-11/12 max-w-sm transform transition-all scale-100">
+            <div class="mb-4">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-1">下載筆記</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400">請輸入檔案名稱與副檔名</p>
+            </div>
+            <div class="mb-6">
+                <input type="text" id="downloadFilenameInput" class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all placeholder-gray-400" placeholder="example.txt" onkeyup="if(event.key === 'Enter') confirmDownload()">
+            </div>
+            <div class="flex gap-3">
+                <button onclick="closeModal('downloadModal')" class="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors">取消</button>
+                <button onclick="confirmDownload()" class="flex-1 px-4 py-2.5 bg-primary hover:bg-blue-600 text-white rounded-lg font-medium shadow-md transition-colors">下載</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 通知 -->
+    <div id="toast">操作成功</div>
+
+    <!-- JavaScript 邏輯 -->
+    <script>
+        // --- 狀態管理 ---
+        let notes = [];
+        let activeNoteId = null;
+
+        // --- DOM 元素 ---
+        const notesListEl = document.getElementById('notesList');
+        const noteTitleEl = document.getElementById('noteTitle');
+        const noteBodyEl = document.getElementById('noteBody');
+        const emptyStateEl = document.getElementById('emptyState');
+        const searchInputEl = document.getElementById('searchInput');
+        const mobileSearchInputEl = document.getElementById('mobileSearchInput');
+        const saveStatusEl = document.getElementById('saveStatus');
+        
+        // --- 初始化 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            loadNotes();
+            setupTheme();
+            setupEventListeners();
+            
+            // 檢查 URL 是否有傳入特定筆記 ID (未來擴充用)
+            if (notes.length > 0) {
+                setActiveNote(notes[0].id);
+            } else {
+                showEmptyState(true);
+            }
+        });
+
+        // --- 核心邏輯 ---
+
+        function loadNotes() {
+            const savedNotes = localStorage.getItem('my-simple-notes');
+            if (savedNotes) {
+                try {
+                    notes = JSON.parse(savedNotes);
+                    // 按照更新時間排序 (新的在前)
+                    notes.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+                } catch (e) {
+                    console.error('讀取筆記失敗', e);
+                    notes = [];
+                }
+            } else {
+                // 歡迎筆記
+                notes = [{
+                    id: Date.now().toString(),
+                    title: "歡迎使用極簡記事本 👋",
+                    body: "這是一個完全運行在瀏覽器端的記事本，資料直接儲存在您的瀏覽器資料庫 (LocalStorage) 中。\n\n功能特點：\n1. 資料隱私：您的筆記只會存在這台電腦，不會上傳雲端。\n2. 自動儲存：輸入即存，無需手動操作。\n3. 離線可用：斷網也能正常使用。\n\n開始您的寫作體驗吧！",
+                    updatedAt: new Date().toISOString()
+                }];
+                saveNotesToStorage();
+            }
+            renderNotesList();
+        }
+
+        function saveNotesToStorage() {
+            localStorage.setItem('my-simple-notes', JSON.stringify(notes));
+            renderNotesList(); // 重新渲染列表以更新時間和標題
+        }
+
+        function createNewNote() {
+            const newNote = {
+                id: Date.now().toString(),
+                title: "",
+                body: "",
+                updatedAt: new Date().toISOString()
+            };
+            notes.unshift(newNote); // 加到最前面
+            saveNotesToStorage();
+            setActiveNote(newNote.id);
+            
+            // 手機版：新增後自動關閉側邊欄
+            if (window.innerWidth < 640) {
+                closeSidebar();
+            }
+            
+            // 聚焦標題
+            setTimeout(() => noteTitleEl.focus(), 100);
+            showToast("已建立新筆記");
+        }
+
+        // --- 改進後的 Modal 控制函式 ---
+
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        // --- 刪除功能 (改用 Modal) ---
+
+        function deleteCurrentNote() {
+            if (!activeNoteId) return;
+            openModal('deleteModal');
+        }
+
+        function confirmDeleteNote() {
+            if (!activeNoteId) return;
+            
+            notes = notes.filter(n => n.id !== activeNoteId);
+            saveNotesToStorage();
+            
+            if (notes.length > 0) {
+                setActiveNote(notes[0].id);
+            } else {
+                activeNoteId = null;
+                showEmptyState(true);
+            }
+            closeModal('deleteModal');
+            showToast("筆記已刪除");
+        }
+
+        // --- 下載功能 (改用 Modal) ---
+
+        function downloadCurrentNote() {
+            if (!activeNoteId) return;
+            const note = notes.find(n => n.id === activeNoteId);
+            if (!note) return;
+
+            // 預設檔名邏輯
+            let defaultName = (note.title || "未命名筆記");
+            if (!/\.[0-9a-z]+$/i.test(defaultName)) {
+                defaultName += ".txt";
+            }
+            
+            const input = document.getElementById('downloadFilenameInput');
+            input.value = defaultName;
+            
+            openModal('downloadModal');
+            // 等待視窗顯示後聚焦輸入框
+            setTimeout(() => input.focus(), 100);
+        }
+
+        function confirmDownload() {
+            if (!activeNoteId) return;
+            
+            const note = notes.find(n => n.id === activeNoteId);
+            const filenameInput = document.getElementById('downloadFilenameInput');
+            const filename = filenameInput.value.trim() || "note.txt"; // 防止空檔名
+            
+            if (!note) return;
+
+            const content = note.body || "";
+            const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            closeModal('downloadModal');
+            showToast("正在下載 " + filename);
+        }
+
+        function setActiveNote(id) {
+            activeNoteId = id;
+            const note = notes.find(n => n.id === id);
+            
+            if (note) {
+                noteTitleEl.value = note.title;
+                noteBodyEl.value = note.body;
+                showEmptyState(false);
+                
+                // 更新列表選中狀態 UI
+                renderNotesList();
+            } else {
+                showEmptyState(true);
+            }
+        }
+
+        function updateCurrentNote() {
+            if (!activeNoteId) return;
+            
+            const noteIndex = notes.findIndex(n => n.id === activeNoteId);
+            if (noteIndex > -1) {
+                notes[noteIndex].title = noteTitleEl.value;
+                notes[noteIndex].body = noteBodyEl.value;
+                notes[noteIndex].updatedAt = new Date().toISOString();
+                
+                // 排序：將當前編輯的筆記移到陣列最前面
+                const currentNote = notes.splice(noteIndex, 1)[0];
+                notes.unshift(currentNote);
+                
+                saveNotesToStorage();
+                
+                // 簡單的儲存狀態回饋
+                saveStatusEl.textContent = '儲存中...';
+                setTimeout(() => {
+                    saveStatusEl.textContent = '已儲存';
+                }, 800);
+            }
+        }
+
+        // --- 渲染 UI ---
+
+        function renderNotesList(filterText = "") {
+            notesListEl.innerHTML = "";
+            
+            const filteredNotes = notes.filter(note => {
+                const title = (note.title || "").toLowerCase();
+                const body = (note.body || "").toLowerCase();
+                const search = filterText.toLowerCase();
+                return title.includes(search) || body.includes(search);
+            });
+
+            if (filteredNotes.length === 0) {
+                notesListEl.innerHTML = `
+                    <div class="text-center text-gray-400 mt-10 text-sm">
+                        沒有找到筆記
+                    </div>
+                `;
+                return;
+            }
+
+            filteredNotes.forEach(note => {
+                const isActive = note.id === activeNoteId;
+                const div = document.createElement('div');
+                div.className = `p-3 rounded-lg cursor-pointer transition-all duration-200 mb-1 border border-transparent ${
+                    isActive 
+                    ? 'bg-white dark:bg-gray-700 shadow-sm border-gray-200 dark:border-gray-600' 
+                    : 'hover:bg-gray-200 dark:hover:bg-gray-700/50'
+                }`;
+                
+                const titleText = note.title || "無標題筆記";
+                const bodyText = note.body ? note.body.substring(0, 40).replace(/\n/g, ' ') + (note.body.length > 40 ? "..." : "") : "沒有內容...";
+                const dateText = new Date(note.updatedAt).toLocaleDateString('zh-TW', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+                div.innerHTML = `
+                    <div class="font-semibold text-gray-800 dark:text-gray-100 truncate ${!note.title ? 'text-gray-400 italic' : ''}">${escapeHtml(titleText)}</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">${escapeHtml(bodyText)}</div>
+                    <div class="text-[10px] text-gray-400 mt-2 text-right">${dateText}</div>
+                `;
+                
+                div.onclick = () => {
+                    setActiveNote(note.id);
+                    // 手機版：點選後關閉側邊欄
+                    if (window.innerWidth < 640) {
+                        closeSidebar();
+                    }
+                };
+                
+                notesListEl.appendChild(div);
+            });
+        }
+
+        function showEmptyState(show) {
+            if (show) {
+                emptyStateEl.classList.remove('hidden');
+                noteTitleEl.disabled = true;
+                noteBodyEl.disabled = true;
+            } else {
+                emptyStateEl.classList.add('hidden');
+                noteTitleEl.disabled = false;
+                noteBodyEl.disabled = false;
+            }
+        }
+
+        // --- 工具函式 ---
+
+        function setupEventListeners() {
+            // 輸入監聽 (自動儲存)
+            noteTitleEl.addEventListener('input', updateCurrentNote);
+            noteBodyEl.addEventListener('input', updateCurrentNote);
+            
+            // 搜尋監聽
+            const handleSearch = (e) => renderNotesList(e.target.value);
+            searchInputEl.addEventListener('input', handleSearch);
+            mobileSearchInputEl.addEventListener('input', handleSearch);
+            
+            // 側邊欄開關 (手機版)
+            const sidebar = document.getElementById('sidebar');
+            const openBtn = document.getElementById('openSidebarBtn');
+            const closeBtn = document.getElementById('closeSidebarBtn');
+            
+            openBtn.addEventListener('click', () => {
+                sidebar.classList.remove('-translate-x-full');
+            });
+            
+            closeBtn.addEventListener('click', closeSidebar);
+        }
+        
+        function closeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.add('-translate-x-full');
+        }
+
+        function escapeHtml(unsafe) {
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        function showToast(message) {
+            const x = document.getElementById("toast");
+            x.textContent = message;
+            x.className = "show";
+            setTimeout(function(){ x.className = x.className.replace("show", ""); }, 3000);
+        }
+
+        // --- 深色模式與主題 ---
+        
+        function setupTheme() {
+            const themeToggleBtn = document.getElementById('themeToggle');
+            const sunIcon = document.getElementById('sunIcon');
+            const moonIcon = document.getElementById('moonIcon');
+            
+            // 檢查儲存的主題或系統偏好
+            if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+                sunIcon.classList.remove('hidden');
+                moonIcon.classList.add('hidden');
+            } else {
+                document.documentElement.classList.remove('dark');
+                sunIcon.classList.add('hidden');
+                moonIcon.classList.remove('hidden');
+            }
+
+            themeToggleBtn.addEventListener('click', () => {
+                if (document.documentElement.classList.contains('dark')) {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.theme = 'light';
+                    sunIcon.classList.add('hidden');
+                    moonIcon.classList.remove('hidden');
+                } else {
+                    document.documentElement.classList.add('dark');
+                    localStorage.theme = 'dark';
+                    sunIcon.classList.remove('hidden');
+                    moonIcon.classList.add('hidden');
+                }
+            });
+        }
+    </script>
+</body>
+</html>
